@@ -297,13 +297,48 @@ func (d *Device) IsConnected() bool {
 // AddInterface adds an interface to the device. The interface must be loaded with ParseInterface
 // from the astarte-go/interfaces package, which also ensures that the interface is valid.
 // The return value should be ignored as the error is always `nil` (i.e. AddInterface cannot fail).
-// TODO since the function always returns nil, do not return an error (target release 1.0)
+// TODO since the function always returns nil, do not return an error (target release 1.0).
+// It is NOT safe to use this function to update device introspection at runtime.
+//
+// Deprecated: since this function is unsafe and does not send the updated introspection to Astarte,
+// it will be removed in the future (target: 1.0).
 func (d *Device) AddInterface(astarteInterface interfaces.AstarteInterface) error {
 	d.introspection.interfaces[astarteInterface.Name] = astarteInterface
 	return nil
 }
 
-// RemoveInterface removes an interface from the device
+// SafeAddInterface adds an interface to the device. The interface must be loaded with ParseInterface
+// from the astarte-go/interfaces package, which also ensures that the interface is valid.
+// It is safe to use this function to update device introspection at runtime.
+// This will be the only way to remove an interface in the future (target: 1.0).
+func (d *Device) SafeAddInterface(astarteInterface interfaces.AstarteInterface) error {
+	d.introspection.Lock()
+	d.introspection.interfaces[astarteInterface.Name] = astarteInterface
+	d.introspection.Unlock()
+	if d.IsConnected() {
+		return d.sendIntrospection(d.generateDeviceIntrospection())
+	}
+	return nil
+}
+
+// RemoveInterface removes an interface from the device.
+// It is NOT safe to use this function to update device introspection at runtime.
+//
+// Deprecated: since this function is unsafe and does not send the updated introspection to Astarte,
+// it will be removed in the future (target: 1.0).
 func (d *Device) RemoveInterface(astarteInterface interfaces.AstarteInterface) {
 	delete(d.introspection.interfaces, astarteInterface.Name)
+}
+
+// RemoveInterface removes an interface from the device.
+// It is safe to use this function to update device introspection at runtime.
+// This will be the only way to remove an interface in the future (target: 1.0).
+func (d *Device) SafeRemoveInterface(astarteInterface interfaces.AstarteInterface) error {
+	d.introspection.Lock()
+	delete(d.introspection.interfaces, astarteInterface.Name)
+	d.introspection.Unlock()
+	if d.IsConnected() {
+		return d.sendIntrospection(d.generateDeviceIntrospection())
+	}
+	return nil
 }

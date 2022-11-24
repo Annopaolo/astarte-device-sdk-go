@@ -118,15 +118,13 @@ func (d *Device) astarteGoSDKDefaultPublishHandler(client mqtt.Client, msg mqtt.
 			}
 		}
 
-		// TODO maybe a finer lock granularity is needed? However, we're using just a read lock so multiple reads can happen simultaneously
-		d.introspection.RLock()
-		if iface, ok := d.introspection.interfaces[interfaceName]; ok {
+		iface, ok := d.getInterfaceFromIntrospection(interfaceName)
+		if ok {
 			d.processIncomingMessage(iface, tokens, msg.Payload(), parsed, timestamp)
 		} else if d.OnErrors != nil {
 			// Something is off.
 			d.OnErrors(d, fmt.Errorf("Received message for unregistered interface %s", interfaceName))
 		}
-		d.introspection.RUnlock()
 	}
 }
 
@@ -276,10 +274,7 @@ func astarteOnConnectHandler(d *Device, sessionPresent bool) {
 // SendIndividualMessageWithTimestamp adds to the publishing channel a new message towards an individual aggregation interface,
 // with explicit timestamp. This call can be blocking if the channel is full (see `MaxInflightMessages`).
 func (d *Device) SendIndividualMessageWithTimestamp(interfaceName, interfacePath string, value interface{}, timestamp time.Time) error {
-	// Get the interface from the introspection
-	d.introspection.RLock()
-	iface, ok := d.introspection.interfaces[interfaceName]
-	d.introspection.RUnlock()
+	iface, ok := d.getInterfaceFromIntrospection(interfaceName)
 	if ok {
 		if iface.Aggregation != interfaces.IndividualAggregation {
 			return fmt.Errorf("interface %s hasn't individual aggregation", interfaceName)
@@ -309,10 +304,7 @@ func (d *Device) SendIndividualMessage(interfaceName, path string, value interfa
 // Example: if dealing with an aggregate interface with endpoints [/my/aggregate/firstValue, /my/aggregate/secondValue],
 // interfacePath would be "/my/aggregate", and values would be map["firstValue": <value>, "secondValue": <value>]
 func (d *Device) SendAggregateMessageWithTimestamp(interfaceName, interfacePath string, values map[string]interface{}, timestamp time.Time) error {
-	// Get the interface from the introspection
-	d.introspection.RLock()
-	iface, ok := d.introspection.interfaces[interfaceName]
-	d.introspection.RUnlock()
+	iface, ok := d.getInterfaceFromIntrospection(interfaceName)
 	if ok {
 		if iface.Aggregation != interfaces.ObjectAggregation {
 			return fmt.Errorf("interface %s hasn't object aggregation", iface.Name)
@@ -347,10 +339,7 @@ func (d *Device) SendAggregateMessage(interfaceName, interfacePath string, value
 // using `GetProperty` or `GetAllProperties`.
 // This call can be blocking if the channel is full (see `MaxInflightMessages`).
 func (d *Device) SetProperty(interfaceName, path string, value interface{}) error {
-	// Get the interface from the introspection
-	d.introspection.RLock()
-	iface, ok := d.introspection.interfaces[interfaceName]
-	d.introspection.RUnlock()
+	iface, ok := d.getInterfaceFromIntrospection(interfaceName)
 	if ok {
 		if iface.Type != interfaces.PropertiesType {
 			return fmt.Errorf("SetProperty can be used only on Property Interfaces, used on %s instead", interfaceName)
@@ -378,10 +367,7 @@ func (d *Device) SetProperty(interfaceName, path string, value interface{}) erro
 // is deleted, it is also removed from the local cache.
 // This call can be blocking if the channel is full (see `MaxInflightMessages`).
 func (d *Device) UnsetProperty(interfaceName, path string) error {
-	// Get the interface from the introspection
-	d.introspection.RLock()
-	iface, ok := d.introspection.interfaces[interfaceName]
-	d.introspection.RUnlock()
+	iface, ok := d.getInterfaceFromIntrospection(interfaceName)
 	if ok {
 		if iface.Type != interfaces.PropertiesType {
 			return fmt.Errorf("UnsetProperty can be used only on Property Interfaces, used on %s instead", interfaceName)
@@ -591,7 +577,7 @@ func (d *Device) generateDeviceIntrospection() string {
 	for _, i := range d.introspection.interfaces {
 		entries = append(entries, fmt.Sprintf("%s:%d:%d", i.Name, i.MajorVersion, i.MinorVersion))
 	}
-	d.introspection.Unlock()
+	d.introspection.RUnlock()
 	sort.Strings(entries)
 
 	return strings.Join(entries, ";")
@@ -697,4 +683,11 @@ func parseBSONPayload(payload []byte) (map[string]interface{}, error) {
 	parsed := map[string]interface{}{}
 	err := bson.Unmarshal(payload, parsed)
 	return parsed, err
+}
+
+func (d *Device) getInterfaceFromIntrospection(interfaceName string) (interfaces.AstarteInterface, bool) {
+	d.introspection.RLock()
+	iface, ok := d.introspection.interfaces[interfaceName]
+	d.introspection.RUnlock()
+	return iface, ok
 }

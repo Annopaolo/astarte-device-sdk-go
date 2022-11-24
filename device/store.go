@@ -157,6 +157,7 @@ func (d *Device) isInterfaceOutdatedInIntrospection(interfaceName string, interf
 			}
 		}
 	}
+	d.introspection.RUnlock()
 	// if the interface is not present in the current introspection, it must be outdated
 	return true
 }
