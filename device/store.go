@@ -145,11 +145,14 @@ func isStoredMessageExpired(message astarteMessageInfo) bool {
 }
 
 func (d *Device) isInterfaceOutdatedInIntrospection(interfaceName string, interfaceMajor int) bool {
-	for _, astarteInterface := range d.interfaces {
+	d.introspection.RLock()
+	for _, astarteInterface := range d.introspection.interfaces {
 		if astarteInterface.Name == interfaceName {
 			if astarteInterface.MajorVersion != interfaceMajor {
+				d.introspection.RUnlock()
 				return true
 			} else {
+				d.introspection.RUnlock()
 				return false
 			}
 		}
@@ -338,7 +341,9 @@ func (d *Device) GetProperty(interfaceName, interfacePath string) (interface{}, 
 	}
 
 	var p property
-	interfaceMajor := d.interfaces[interfaceName].MajorVersion
+	d.introspection.RLock()
+	interfaceMajor := d.introspection.interfaces[interfaceName].MajorVersion
+	d.introspection.RUnlock()
 	// since we use all fields of the primary key, we're sure there will be at most one property
 	result := d.db.Where(&property{InterfaceName: interfaceName, Path: interfacePath, InterfaceMajor: interfaceMajor}).Find(&p)
 	if result.Error != nil {
@@ -358,7 +363,9 @@ func (d *Device) GetAllPropertiesForInterface(interfaceName string) (map[string]
 	}
 
 	var properties []property
-	interfaceMajor := d.interfaces[interfaceName].MajorVersion
+	d.introspection.RLock()
+	interfaceMajor := d.introspection.interfaces[interfaceName].MajorVersion
+	d.introspection.RUnlock()
 	result := d.db.Where(&property{InterfaceName: interfaceName, InterfaceMajor: interfaceMajor}).Find(&properties)
 	if result.Error != nil {
 		return nil, result.Error

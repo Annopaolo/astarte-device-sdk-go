@@ -40,12 +40,17 @@ type messageQueue struct {
 	queue chan astarteMessageInfo
 }
 
+type deviceIntrospection struct {
+	sync.RWMutex
+	interfaces map[string]interfaces.AstarteInterface
+}
+
 // Device is the base struct for Astarte Devices
 type Device struct {
 	deviceID                    string
 	realm                       string
 	m                           mqtt.Client
-	interfaces                  map[string]interfaces.AstarteInterface
+	introspection               deviceIntrospection
 	astarteAPIClient            *client.Client
 	brokerURL                   string
 	db                          *gorm.DB
@@ -106,7 +111,8 @@ func newDevice(deviceID, realm, credentialsSecret, pairingBaseURL string, opts D
 	d := new(Device)
 	d.deviceID = deviceID
 	d.realm = realm
-	d.interfaces = map[string]interfaces.AstarteInterface{}
+	// the zero value of a RWLock is an unlocked RWLock, so it is safe to do this here
+	d.introspection.interfaces = map[string]interfaces.AstarteInterface{}
 	d.opts = opts
 
 	if len(opts.CryptoDir) == 0 {
@@ -169,8 +175,12 @@ func (d *Device) Connect(result chan<- error) {
 			return
 		}
 
+		// Take a snapshot of the initial introspection
+		d.introspection.RLock()
+		introspection := d.introspection.interfaces
+		d.introspection.RUnlock()
 		// At least one interface available?
-		if len(d.interfaces) == 0 {
+		if len(introspection) == 0 {
 			if result != nil {
 				result <- errors.New("add at least an interface before attempting to connect")
 			}
@@ -289,11 +299,11 @@ func (d *Device) IsConnected() bool {
 // The return value should be ignored as the error is always `nil` (i.e. AddInterface cannot fail).
 // TODO since the function always returns nil, do not return an error (target release 1.0)
 func (d *Device) AddInterface(astarteInterface interfaces.AstarteInterface) error {
-	d.interfaces[astarteInterface.Name] = astarteInterface
+	d.introspection.interfaces[astarteInterface.Name] = astarteInterface
 	return nil
 }
 
 // RemoveInterface removes an interface from the device
 func (d *Device) RemoveInterface(astarteInterface interfaces.AstarteInterface) {
-	delete(d.interfaces, astarteInterface.Name)
+	delete(d.introspection.interfaces, astarteInterface.Name)
 }
